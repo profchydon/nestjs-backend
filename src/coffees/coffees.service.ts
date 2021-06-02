@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Scope } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { Repository, Connection } from 'typeorm';
@@ -6,8 +6,11 @@ import { CreateCoffeeDto } from './dto/create-coffee.dto';
 import { UpdateCoffeeDto } from './dto/update-coffee.dto';
 import { Coffee } from './entities/coffees.entity';
 import { Flavor } from './entities/flavors.entity';
-import { Event } from 'src/events/entities/event.entity'
+import { Event } from 'src/events/entities/event.entity';
+import { COFFEE_BRANDS } from './coffees.constants';
+import { ConfigService } from '@nestjs/config';
 
+// @Injectable({ scope: Scope.REQUEST })
 @Injectable()
 export class CoffeesService {
   constructor(
@@ -15,10 +18,16 @@ export class CoffeesService {
     private readonly coffeeRepository: Repository<Coffee>,
     @InjectRepository(Flavor)
     private readonly flavorRepository: Repository<Flavor>,
+    @Inject(COFFEE_BRANDS) coffeeBrands: string[],
     private readonly connection: Connection,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    const coffeesConfig = this.configService.get('coffees');
+    console.log(coffeesConfig);
+    
+  }
 
-  findAll(paginationQuery: PaginationQueryDto) {
+  findAll(paginationQuery: PaginationQueryDto): Promise<Coffee[]> {
     const { limit, offset } = paginationQuery;
     return this.coffeeRepository.find({
       relations: ['flavors'],
@@ -27,7 +36,7 @@ export class CoffeesService {
     });
   }
 
-  async findOne(id: number) {
+  async findOne(id: number): Promise<Coffee> {
     const coffee = await this.coffeeRepository.findOne(id, {
       relations: ['flavors'],
     });
@@ -50,7 +59,7 @@ export class CoffeesService {
     return this.coffeeRepository.save(coffee);
   }
 
-  async update(id: number, updateCoffeeDto: UpdateCoffeeDto) {
+  async update(id: number, updateCoffeeDto: UpdateCoffeeDto): Promise<Coffee> {
     const flavors =
       updateCoffeeDto.flavors &&
       (await Promise.all(
@@ -68,7 +77,7 @@ export class CoffeesService {
     return this.coffeeRepository.save(coffee);
   }
 
-  async remove(id: number) {
+  async remove(id: number): Promise<Coffee> {
     const coffee = await this.findOne(id);
     return this.coffeeRepository.remove(coffee);
   }
@@ -89,7 +98,6 @@ export class CoffeesService {
     await queryRunner.startTransaction();
     try {
       coffee.recommendations++;
-
       const recommendEvent = new Event();
       recommendEvent.name = 'recommend_coffee';
       recommendEvent.type = 'coffee';
@@ -100,6 +108,7 @@ export class CoffeesService {
 
       await queryRunner.commitTransaction();
     } catch (err) {
+      // since we have errors lets rollback the changes we made
       await queryRunner.rollbackTransaction();
     } finally {
       await queryRunner.release();
